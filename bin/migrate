@@ -357,6 +357,7 @@ function init() {
                 }
             }
         });
+    process.exit();
 }
 
 function doSeed() {
