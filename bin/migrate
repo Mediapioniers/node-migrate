@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+'use strict';
 /**
  * Module dependencies.
  */
@@ -26,6 +27,7 @@ var args = process.argv.slice(2);
 var options = {
     args: [],
     isProdEnvironment: true,
+    allowProd: false,
     force: false,
     redoFile: null,
     seedAfterMigrate: false,
@@ -35,8 +37,9 @@ var options = {
         '\'use strict\';'
         , ''
         , 'var fs = require(\'fs\');'
-        , 'var mysql = require(\'mysql\');'
         , 'var db = require(\'./db.js\');'
+        , ''
+        , 'exports.parent = \'%parent%\';'
         , ''
         , 'exports.up = function(next) {'
         , '    db.query(fs.readFileSync(\'./migrations/sql/%file%.up.sql\').toString(), function(err, result) {'
@@ -60,6 +63,8 @@ var options = {
     templateSeedOnly: [
         '\'use strict\';'
         , ''
+        , 'exports.parent = \'%parent%\';'
+        , ''
         , 'exports.up = function(next) {'
         , '    next();'
         , '};'
@@ -72,7 +77,7 @@ var options = {
 };
 
 try {
-    options.isProdEnvironment = _.get(require(join(path.resolve('lib'), 'config.js')), 'client.host', 'client.mobilea.nl') === 'client.mobilea.nl';
+    options.isProdEnvironment = (process.env.NODE_ENV || 'production') === 'production';
 } catch (err) {
     options.isProdEnvironment = true;
 }
@@ -85,7 +90,7 @@ while (args.length) {
         case arg.match(/^(\?|-h|--help|help)$/i) !== null:
             showHelp();
             break;
-        case arg.match(/^(-c|--chdir)$/i) != null:
+        case arg.match(/^(-c|--chdir)$/i) !== null:
             process.chdir(required());
             break;
         case arg.match(/^--state-file$/i) !== null:
@@ -93,6 +98,9 @@ while (args.length) {
             break;
         case arg.match(/^--template-file$/i) !== null:
             options.template = fs.readFileSync(required());
+            break;
+        case arg.match(/^(-ap|--allow-prod)$/i) !== null:
+            options.allowProd = true;
             break;
         case arg.match(/^(-s|--seed)$/i) !== null:
             options.seedAfterMigrate = true;
@@ -110,8 +118,8 @@ while (args.length) {
         case arg.match(/^\d+-.*\.json$/i) !== null:
             options.seedFiles.push(path.join(path.resolve('migrations'), 'seeder', 'data', arg.match(/^\d+-.*\.json$/i)[0]));
             break;
-        case arg.match(/^(up|down|seed|redo|list)$/i) !== null:
-            options.command = arg.match(/^(up|down|seed|redo|list)$/i)[1].toLowerCase();
+        case arg.match(/^(up|down|seed|redo|list|init|check)$/i) !== null:
+            options.command = arg.match(/^(up|down|seed|redo|list|init|check)$/i)[1].toLowerCase();
             if (options.command === 'seed') {
                 var seedFile = required();
                 if (seedFile.match(/^\d+-.*\.json$/i)) {
@@ -140,45 +148,29 @@ options.stateFile = options.stateFile || join('migrations', '.migrate');
 
 // create ./migrations directories
 try {
-    fs.mkdirSync('migrations', 0774);
+    fs.mkdirSync('migrations', parseInt('0774', 8));
 } catch (err) {
     // ignore
 }
 try {
-    fs.mkdirSync('migrations/seeder', 0774);
+    fs.mkdirSync('migrations/seeder', parseInt('0774', 8));
 } catch (err) {
     // ignore
 }
 try {
-    fs.mkdirSync('migrations/seeder/data', 0774);
+    fs.mkdirSync('migrations/seeder/data', parseInt('0774', 8));
 } catch (err) {
     // ignore
 }
 try {
-    fs.mkdirSync('migrations/sql', 0774);
+    fs.mkdirSync('migrations/sql', parseInt('0774', 8));
 } catch (err) {
     // ignore
 }
 
-if (~['up', 'down', 'redo', 'list'].indexOf(options.command)) {
+if (~['up', 'down', 'redo', 'list', 'check', 'init'].indexOf(options.command)) {
     try {
-        set = migrate.load(options.stateFile, 'migrations');
-        if (!set.migrations || set.migrations.length === 0) {
-            abort('There are no migrations found! Create a new migration first by using: \'migrate create\'');
-        }
-        set.on('migration', function(migration, direction, seedFiles) {
-            log(direction, migration.title);
-            if (direction === 'up' && seedFiles) {
-                if (!_.isArray(seedFiles)) {
-                    seedFiles = [seedFiles];
-                }
-                _.forEach(seedFiles, function(seedFile) {
-                    if (!_.includes(options.seedFiles, seedFile)) {
-                        options.seedFiles.push(path.join(path.resolve('migrations'), 'seeder', 'data', seedFile));
-                    }
-                });
-            }
-        });
+        set = getMigrationSet();
 
         if (options.command === 'redo' && set.migrations.length > 0) {
             options.redoFile = set.migrations[set.pos - 1].title
@@ -204,11 +196,18 @@ switch (options.command) {
         if (options.command !== 'up') {
             abortOnProd();
         }
+        check();
         if (options.file) {
             handleSelectedFile(options.file, options.redoFile);
         } else {
             selectFile(handleSelectedFile);
         }
+        break;
+    case 'init':
+        init();
+        break;
+    case 'check':
+        check(true);
         break;
     case 'list':
         showList();
@@ -238,8 +237,126 @@ function required() {
 // abort with a message
 
 function abort(msg) {
-    console.log(chalk.bgRed(msg));
+    console.log(chalk.bgRed(msg || 'Aborting...'));
     process.exit(1);
+}
+
+function getMigrationSet(creating) {
+    creating = !!creating;
+    var set = migrate.load(options.stateFile, 'migrations');
+    if (!creating && (!set.migrations || set.migrations.length === 0)) {
+        abort('There are no migrations found! Create a new migration first by using: \'migrate create\'');
+    }
+    if (!creating) {
+        set.on('migration', function(migration, direction, seedFiles) {
+            log(direction, migration.title);
+            if (direction === 'up' && seedFiles) {
+                if (!_.isArray(seedFiles)) {
+                    seedFiles = [seedFiles];
+                }
+                _.forEach(seedFiles, function(seedFile) {
+                    if (!_.includes(options.seedFiles, seedFile)) {
+                        options.seedFiles.push(path.join(path.resolve('migrations'), 'seeder', 'data', seedFile));
+                    }
+                });
+            }
+        });
+    }
+    return set;
+}
+
+function checkDisplay(part, isOk) {
+    if (_.isBoolean(part)) {
+        isOk = part;
+        part = 'Result';
+    }
+    if (_.isUndefined(isOk)) {
+        return console.log('Check --> ' + part);
+    }
+    console.log('Check --> ' + part + ': ' + chalk[isOk ? 'green' : 'red'](isOk ? 'PASSED!' : 'FAILED!'));
+    if (!isOk) {
+        return abort();
+    }
+}
+
+function check(exit) {
+    /**
+     * @type {Migration[]}
+     */
+    var migrations = _.get(set, ['migrations'], []);
+    checkDisplay('Are migration parents set-up?');
+    if (!_.every(migrations, function(migration) {
+            return _.isString(migration.parent);
+        })) {
+        checkDisplay('The migrations have not been initialized yet to work with the \'check\' option. Run ' + chalk.green('\'migrate init\'') + ' first, but ' + chalk.red('only') + ' when you are sure the current migration state is correct!');
+        return checkDisplay(false);
+    }
+    checkDisplay(true);
+    checkDisplay('Do all migrations have the correct and expected parent?')
+    _.forEach(migrations,
+        /**
+         * @param {Migration} migration
+         * @param {int} index
+         */
+        function(migration, index) {
+            if (index === 0) {
+                if (migration.parent !== '') {
+                    return checkDisplay('First migration has a parent but, being the 1st, he cannot have a parent!', false);
+                }
+            } else {
+                try {
+                    var actualParent = /^\d+/.exec(migrations[index - 1].title)[0];
+                    if (migration.parent !== actualParent) {
+                        checkDisplay(chalk.red('Inconsistency: ') + migration.title + ' is based on ' + migration.parent + ' but it\'s actual parent is: ' + actualParent);
+                        return checkDisplay('Inconsistency detected!', false);
+                    }
+                } catch (e) {
+                    return checkDisplay('An unexpected error occurred while checking! (' + e.message + ')', false);
+                }
+            }
+        });
+    checkDisplay(true);
+    checkDisplay('All checks', true);
+    if (exit) {
+        process.exit();
+    }
+}
+
+function init() {
+    /**
+     * @type {Migration[]}
+     */
+    var migrations = _.get(set, ['migrations'], []);
+    _.forEach(migrations,
+        /**
+         * @param {Migration} migration
+         * @param {int} index
+         */
+        function(migration, index) {
+            var parent = '';
+            if (index > 0) {
+                parent = /^\d+/.exec(migrations[index - 1].title)[0];
+            }
+            var filePath = join(path.resolve('migrations'), migration.title);
+            var fileContents = fs.readFileSync(filePath).toString();
+            if (/exports\.parent/gm.test(fileContents)) {
+                console.log('Already initialized: ' + migration.title);
+            } else {
+                fileContents = fileContents.replace(/exports\.up/gm, 'exports.parent = \'' + parent + '\';\n\nexports.up');
+                try {
+                    fs.writeFileSync(filePath, fileContents);
+                    if (parent) {
+                        console.log('Parent ' + parent + ' added to file: ' + migration.title);
+                    } else {
+                        console.log('First migration file: ' + migration.title)
+                    }
+
+                } catch (e) {
+                    console.log(e);
+                    abort('Error occurred while writing file: ' + filePath);
+                }
+            }
+        });
 }
 
 function doSeed() {
@@ -285,7 +402,7 @@ function doMigration(file, redoFile) {
                 console.log(chalk.bold('Or execute the following command:'));
                 var seedFiles = [];
                 _.forEach(options.seedFiles, function(seedFile) {
-                    var match = seedFile.match(/(\\|\/)((\d+)-.*\.json)/i);
+                    var match = seedFile.match(/([\\\/])((\d+)-.*\.json)/i);
                     seedFiles.push(match ? match[2] : seedFile);
                 });
                 console.log(chalk.green(chalk.bold('migrate seed ' + seedFiles.join(' '))));
@@ -321,7 +438,10 @@ function doMigration(file, redoFile) {
 
 function abortOnProd() {
     if (options.isProdEnvironment) {
-        abort('Command: \'' + chalk.bold(options.command) + '\' is not allowed in a PRODUCTION environment!');
+        if (!options.allowProd) {
+            return abort('Command: \'' + chalk.bold(options.command) + '\' is not allowed in a PRODUCTION environment!');
+        }
+        options.force = false; // In a production environment a command other than 'up' may not be forced!
     }
 }
 
@@ -423,6 +543,20 @@ function create() {
     var curr = Date.now()
         , title = slugify([].slice.call(arguments).join(' '));
 
+    var set = getMigrationSet(true);
+    /**
+     * @type {Migration[]}
+     */
+    var migrations = set.migrations;
+    var parent = '';
+    if (migrations.length) {
+        try {
+            parent = /^\d+/.exec(migrations[migrations.length - 1].title)[0]
+        } catch (e) {
+            return abort('Cannot determine the parent for the migration! Error occurred: ' + e.message);
+        }
+    }
+
     getUniqueTemplateName(title, function(templateName) {
         title = title ? curr + '-' + title : curr;
         var filePath = join(path.resolve('migrations'), title + '.js');
@@ -431,6 +565,7 @@ function create() {
         template = template.replace(/%file%/g, templateName);
         var comment = '\n/*\n * Specify only file names. Files are expected to reside in the directory ./migrations/seeder/data/\n */\n';
         template = template.replace(/%seedStatement%/g, comment + (options.seedAfterMigrate ? 'exports.seedFiles = [\'' + title + '.json\'];\n' : 'exports.seedFiles = [];\n'));
+        template = template.replace(/%parent%/g, parent);
         fs.writeFileSync(filePath, template);
         if (!options.seedOnly) {
             fs.writeFileSync(join(path.resolve('migrations'), 'sql', templateName + '.up.sql'), '# PLACE YOUR \'UP\' MIGRATION SQL HERE!');
@@ -446,9 +581,9 @@ function getUniqueTemplateName(fileName, done) {
     var check = function(checkCounter, callBack) {
         var name = fileName + (checkCounter > 0 ? ' (' + checkCounter + ')' : '');
         fs.stat(join('migrations', 'sql', name + '.up.sql'), function(err) {
-            if (err == null) {
+            if (err === null) {
                 callBack(null, checkCounter)
-            } else if (err.code == 'ENOENT') {
+            } else if (err.code === 'ENOENT') {
                 callBack(name, checkCounter);
             } else {
                 abort('Error getting unique fileName: ' + err.code);
@@ -481,8 +616,12 @@ function showHelp() {
     console.log(chalk.bold('* ') + ' create [name]     create a new migration. Will also create .sql files to put the actual migration scripts in.');
     console.log(chalk.bold('* ') + ' redo   [name]     migrate down till given migration and back up again to where it migrated down from.');
     console.log(chalk.bold('* ') + ' list              shows all available migrations and their current processing state.');
-    console.log(chalk.bold('* ') + ' seed   [name...]  using \'seed\' as a command results in ' + chalk.bold('\'seeding\'') + ' only.');
+    console.log(chalk.bold('* ') + ' seed   ...name    using \'seed\' as a command results in ' + chalk.bold('\'seeding\'') + ' only.');
     console.log(chalk.bold('* ') + '                   You need to specify at least 1 file to seed!');
+    console.log(chalk.bold('* ') + ' init              Initializes older migration scripts with the ' + chalk.bold('\'migration.parent\'') + ' property');
+    console.log(chalk.bold('* ') + '                   in order to guarantee the correct processing order.');
+    console.log(chalk.bold('* ') + ' check             Checks if migration scripts are set-up with the ' + chalk.bold('\'migration.parent\'') + ' property');
+    console.log(chalk.bold('* ') + '                   and verifies the correct processing order of the migration scripts. Will abort if check fails!');
     console.log(chalk.bold('* '));
     console.log(chalk.bold('* name: ') + 'This is the filename of the migration.');
     console.log(chalk.bold('* ') + '      When the ' + chalk.bold('filename') + ' is omitted and there is more than 1 file available, you will be');
@@ -497,6 +636,8 @@ function showHelp() {
     console.log(chalk.bold('* ') + ' -s, --seed              using \'seed\' as an option will perform ' + chalk.bold('\'seeding\'') + ' when ' + chalk.bold('\'migrating\'') + ' has finished!)');
     console.log(chalk.bold('* ') + '                         when specified in conjunction with the ' + chalk.bold('\'create\'') + ' command, an empty seed file will also be created!)');
     console.log(chalk.bold('* ') + ' -so, --seed-only        only valid with the ' + chalk.bold('\'create\'') + ' command. Will create an empty seed file and no migration files');
+    console.log(chalk.bold('* ') + ' -ap, --allow-prod       Specifying this option wil allow the ' + chalk.bold('\'down\'') + ' and ' + chalk.bold('\'redo\'') + ' commands in a production environment!');
+    console.log(chalk.bold('* ') + '                         This option however will ignore the ' + chalk.bold('\'-f | --force\'') + ' flag and it will set it to ' + chalk.bold('\'false\'') + ', forcing user interaction!');
     console.log(chalk.bold('* '));
     console.log(chalk.bold('* Some examples:'));
     console.log(chalk.bold('* '));
@@ -512,3 +653,12 @@ function showHelp() {
     console.log(chalk.bold(_.repeat('*', 100)));
     process.exit();
 }
+
+/**
+ *  @property {function} chalk.bold
+ *  @property {function} chalk.cyan
+ *  @property {function} chalk.red
+ *  @property {function} chalk.green
+ *  @property {function} chalk.dim
+ *  @property {function} chalk.bgRed
+ */
