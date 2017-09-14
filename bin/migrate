@@ -268,31 +268,52 @@ function getMigrationSet(creating) {
 function checkDisplay(part, isOk) {
     if (_.isBoolean(part)) {
         isOk = part;
-        part = 'Result';
+        part = undefined;
     }
     if (_.isUndefined(isOk)) {
         return console.log('Check --> ' + part);
     }
-    console.log('Check --> ' + part + ': ' + chalk[isOk ? 'green' : 'red'](isOk ? 'PASSED!' : 'FAILED!'));
+    console.log('Check --> Result: ' + chalk[isOk ? 'green' : 'red'](isOk ? 'PASSED!' : 'FAILED!') + (part ? (isOk ? ' Comment: ' : ' Reason: ') + part : ''));
     if (!isOk) {
         return abort();
     }
 }
 
 function check(exit) {
+    var state = migrate.state(options.stateFile);
     /**
      * @type {Migration[]}
      */
     var migrations = _.get(set, ['migrations'], []);
+
+    var reSaveState = false;
+    if (state.migrations.length) {
+        checkDisplay('Previous migrations found! Verifying if the POSITION head is correct!');
+        _.forEach(state.migrations, function(migration) {
+            var exists = _.find(migrations, {title: migration.title});
+            if (!exists) {
+                reSaveState = true;
+                checkDisplay('Migration ' + chalk.red(migration.title) + ' does not exist anymore! ==> correction the POSITION head!');
+                set.pos -= 1;
+                if (set.pos < 0) {
+                    set.pos = 0;
+                }
+            }
+        });
+        if (reSaveState) {
+            checkDisplay('POSITION head has changed! New POSITION will be stored when all other checks PASS', true);
+        } else {
+            checkDisplay(true);
+        }
+    }
     checkDisplay('Are migration parents set-up?');
     if (!_.every(migrations, function(migration) {
             return _.isString(migration.parent);
         })) {
-        checkDisplay('The migrations have not been initialized yet to work with the \'check\' option. Run ' + chalk.green('\'migrate init\'') + ' first, but ' + chalk.red('only') + ' when you are sure the current migration state is correct!');
-        return checkDisplay(false);
+        return checkDisplay('Not all migrations have been initialized to work with the ' + chalk.green('\'check\'') + ' option. Run ' + chalk.green('\'migrate init\'') + ' first, but ' + chalk.red('only') + ' when you are sure the current migration state is correct!', false);
     }
     checkDisplay(true);
-    checkDisplay('Do all migrations have the correct and expected parent?')
+    checkDisplay('Do all migrations have the correct and expected parent?');
     _.forEach(migrations,
         /**
          * @param {Migration} migration
@@ -316,9 +337,19 @@ function check(exit) {
             }
         });
     checkDisplay(true);
-    checkDisplay('All checks', true);
-    if (exit) {
-        process.exit();
+
+    var checkExit = function() {
+        if (exit) {
+            process.exit();
+        }
+    };
+
+    if (reSaveState) {
+        set.save(function() {
+            checkExit();
+        })
+    } else {
+        checkExit();
     }
 }
 
