@@ -185,6 +185,7 @@ if (~['up', 'down', 'redo', 'list', 'check', 'init'].indexOf(options.command)) {
             }
         }
     } catch (e) {
+        console.log(e);
         abort('Unable to initialize migrations -> Exiting!');
     }
 }
