@@ -287,21 +287,17 @@ function check(exit) {
      */
     var migrations = _.get(set, ['migrations'], []);
 
-    var reSaveState = false;
+    var removeFromState = [];
     if (state.migrations.length) {
         checkDisplay('Previous migrations found! Verifying if the POSITION head is correct!');
         _.forEach(state.migrations, function(migration) {
             var exists = _.find(migrations, {title: migration.title});
             if (!exists) {
-                reSaveState = true;
+                removeFromState.push(migration.title);
                 checkDisplay('Migration ' + chalk.red(migration.title) + ' does not exist anymore! ==> correction the POSITION head!');
-                set.pos -= 1;
-                if (set.pos < 0) {
-                    set.pos = 0;
-                }
             }
         });
-        if (reSaveState) {
+        if (removeFromState.length) {
             checkDisplay('POSITION head has changed! New POSITION will be stored when all other checks PASS', true);
         } else {
             checkDisplay(true);
@@ -345,7 +341,15 @@ function check(exit) {
         }
     };
 
-    if (reSaveState) {
+    if (removeFromState.length) {
+        _.forEach(removeFromState, function(migration2remove) {
+            _.pullAllBy(set.migrations, [{title: migration2remove}], 'title');
+        });
+        var newPos = 0;
+        _.forEach(set.migrations, function(migration) {
+            newPos += migration.processed ? 1 : 0;
+        });
+        set.pos = newPos;
         set.save(function() {
             checkExit();
         })
@@ -359,6 +363,7 @@ function init() {
      * @type {Migration[]}
      */
     var migrations = _.get(set, ['migrations'], []);
+    var reSaveState = false;
     _.forEach(migrations,
         /**
          * @param {Migration} migration
@@ -372,7 +377,9 @@ function init() {
             var filePath = join(path.resolve('migrations'), migration.title);
             var fileContents = fs.readFileSync(filePath).toString();
             if (/exports\.parent/gm.test(fileContents)) {
-                console.log('Already initialized: ' + migration.title);
+                if (_.has(migration, 'processed')) {
+                    console.log('Already initialized: ' + migration.title);
+                }
             } else {
                 fileContents = fileContents.replace(/exports\.up/gm, 'exports.parent = \'' + parent + '\';\n\nexports.up');
                 try {
@@ -388,8 +395,19 @@ function init() {
                     abort('Error occurred while writing file: ' + filePath);
                 }
             }
+            if (!_.has(migration, 'processed')) {
+                reSaveState = true;
+                migration.processed = (set.pos - 1 >= index);
+                console.log('Added state processed: ' + migration.processed + ' to migration: ' + migration.title);
+            }
         });
-    process.exit();
+    if (reSaveState) {
+        set.save(function() {
+            process.exit();
+        })
+    } else {
+        process.exit();
+    }
 }
 
 function doSeed() {
@@ -406,7 +424,7 @@ function doSeed() {
 
 function showList() {
     for (var i = 0; i < set.migrations.length; i++) {
-        console.log(chalk.bold(_.padStart(i + 1, 6, ' ')) + ': ' + set.migrations[i].title + ' (' + (set.pos - 1 >= i ? chalk.green('processed') : chalk.red('not processed yet')) + ')');
+        console.log(chalk.bold(_.padStart(i + 1, 6, ' ')) + ': ' + set.migrations[i].title + ' (' + (set.migrations[i].processed ? chalk.green('processed') : chalk.red('not processed yet')) + ')');
     }
     process.exit();
 }
@@ -607,6 +625,7 @@ function create() {
         if (options.seedAfterMigrate) {
             fs.writeFileSync(join(path.resolve('migrations'), 'seeder', 'data', title + '.json'), '{}');
         }
+        process.exit();
     });
 }
 
