@@ -424,7 +424,7 @@ function doSeed() {
 
 function showList() {
     for (var i = 0; i < set.migrations.length; i++) {
-        console.log(chalk.bold(_.padStart(i + 1, 6, ' ')) + ': ' + set.migrations[i].title + ' (' + (set.migrations[i].processed ? chalk.green('processed') : chalk.red('not processed yet')) + ')');
+        console.log(chalk.bold(_.padStart(i + 1, 6, ' ')) + ': ' + set.migrations[i].title + ' (' + (_.get(set.migrations[i], 'processed', (set.pos - 1 >= i)) ? chalk.green('processed') : chalk.red('not processed yet')) + ')');
     }
     process.exit();
 }
