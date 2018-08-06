@@ -173,13 +173,13 @@ if (~['up', 'down', 'redo', 'list', 'check', 'init'].indexOf(options.command)) {
         set = getMigrationSet();
 
         if (options.command === 'redo' && set.migrations.length > 0) {
-            options.redoFile = set.migrations[set.pos - 1].title
+            options.redoFile = set.migrations[set.pos - 1].title;
         }
         // check if the specified file is a valid file in the migration set.
         if (options.file) {
             if (!_.find(set.migrations, function(migration) {
-                    return migration.title.toLowerCase() === options.file.toLowerCase()
-                })) {
+                return migration.title.toLowerCase() === options.file.toLowerCase();
+            })) {
                 console.log(chalk.bgRed('The migration file: \'' + options.file + '\', that was specified, is not valid! You will be prompted to select a file manually'));
                 options.file = null;
             }
@@ -305,8 +305,8 @@ function check(exit) {
     }
     checkDisplay('Are migration parents set-up?');
     if (!_.every(migrations, function(migration) {
-            return _.isString(migration.parent);
-        })) {
+        return _.isString(migration.parent);
+    })) {
         return checkDisplay('Not all migrations have been initialized to work with the ' + chalk.green('\'check\'') + ' option. Run ' + chalk.green('\'migrate init\'') + ' first, but ' + chalk.red('only') + ' when you are sure the current migration state is correct!', false);
     }
     checkDisplay(true);
@@ -352,7 +352,7 @@ function check(exit) {
         set.pos = newPos;
         set.save(function() {
             checkExit();
-        })
+        });
     } else {
         checkExit();
     }
@@ -387,7 +387,7 @@ function init() {
                     if (parent) {
                         console.log('Parent ' + parent + ' added to file: ' + migration.title);
                     } else {
-                        console.log('First migration file: ' + migration.title)
+                        console.log('First migration file: ' + migration.title);
                     }
 
                 } catch (e) {
@@ -404,7 +404,7 @@ function init() {
     if (reSaveState) {
         set.save(function() {
             process.exit();
-        })
+        });
     } else {
         process.exit();
     }
@@ -420,6 +420,16 @@ function doSeed() {
         console.log(chalk.green('Seeding finished!'));
         process.exit();
     });
+}
+
+function afterMigration(file) {
+    try {
+        require(path.join(path.resolve('migrations'), 'after', 'migration.js'))(file, function() {
+            process.exit();
+        });
+    } catch (e) {
+        process.exit();
+    }
 }
 
 function showList() {
@@ -444,6 +454,7 @@ function doMigration(file, redoFile) {
             throw err;
         }
         console.log(chalk.green('Migration completed!'));
+        afterMigration(file);
         if (options.seedAfterMigrate) {
             doSeed();
         } else {
@@ -470,7 +481,7 @@ function doMigration(file, redoFile) {
                     throw err;
                 }
                 console.log(chalk.bold('Migrating up 2 and including: ' + redoFile));
-                set.up(redoFile, migrationCallback)
+                set.up(redoFile, migrationCallback);
             });
             break;
         case 'up':
@@ -602,7 +613,7 @@ function create() {
     var parent = '';
     if (migrations.length) {
         try {
-            parent = /^\d+/.exec(migrations[migrations.length - 1].title)[0]
+            parent = /^\d+/.exec(migrations[migrations.length - 1].title)[0];
         } catch (e) {
             return abort('Cannot determine the parent for the migration! Error occurred: ' + e.message);
         }
@@ -634,7 +645,7 @@ function getUniqueTemplateName(fileName, done) {
         var name = fileName + (checkCounter > 0 ? ' (' + checkCounter + ')' : '');
         fs.stat(join('migrations', 'sql', name + '.up.sql'), function(err) {
             if (err === null) {
-                callBack(null, checkCounter)
+                callBack(null, checkCounter);
             } else if (err.code === 'ENOENT') {
                 callBack(name, checkCounter);
             } else {
@@ -650,7 +661,7 @@ function getUniqueTemplateName(fileName, done) {
             if (++counter < 100) {
                 check(counter, lambda);
             } else {
-                abort('Recursion limit: Unique templateName for SQL-files could not be determined!')
+                abort('Recursion limit: Unique templateName for SQL-files could not be determined!');
             }
         }
     });
