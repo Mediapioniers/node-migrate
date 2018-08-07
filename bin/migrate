@@ -262,6 +262,9 @@ function getMigrationSet(creating) {
                 });
             }
         });
+        set.on('migrationDone', function(migration, direction, seedFiles) {
+            afterMigration(migration.title);
+        });
     }
     return set;
 }
@@ -424,11 +427,14 @@ function doSeed() {
 
 function afterMigration(file) {
     try {
-        require(path.join(path.resolve('migrations'), 'after', 'migration.js'))(file, function() {
-            process.exit();
+        require(path.join(path.resolve('migrations'), 'after', 'migration.js'))(file, function(err) {
+            if(err) {
+                throw err;
+            }
+            // process.exit();
         });
     } catch (e) {
-        process.exit();
+        // process.exit();
     }
 }
 
@@ -454,7 +460,6 @@ function doMigration(file, redoFile) {
             throw err;
         }
         console.log(chalk.green('Migration completed!'));
-        afterMigration(file);
         if (options.seedAfterMigrate) {
             doSeed();
         } else {
@@ -472,7 +477,6 @@ function doMigration(file, redoFile) {
             process.exit();
         }
     };
-
     switch (options.command) {
         case 'redo':
             console.log(chalk.bold('Migrating down 2 and including: ' + file));
@@ -492,7 +496,7 @@ function doMigration(file, redoFile) {
             console.log(chalk.bold('Migrating down 2 and including: ' + file));
             set.down(file, migrationCallback);
             break;
-        default:
+            default:
             abort('doMigration() Unknown command!');
             break;
     }
