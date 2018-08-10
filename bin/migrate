@@ -431,10 +431,10 @@ function afterMigration(file) {
             if(err) {
                 throw err;
             }
-            // process.exit();
         });
-    } catch (e) {
-        // process.exit();
+    } catch (err) {
+        throw err;
+        process.exit();
     }
 }
 
