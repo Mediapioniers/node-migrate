@@ -425,16 +425,23 @@ function doSeed() {
     });
 }
 
+let noFile = false;
 function afterMigration(file) {
-    try {
-        require(path.join(path.resolve('migrations'), 'after', 'migration.js'))(file, function(err) {
-            if(err) {
+    if(!noFile) {
+        try {
+            require(path.join(path.resolve('migrations'), 'after', 'migration.js'))(file, function(err) {
+                if(err) {
+                    throw err;
+                }
+            });
+        } catch (err) {
+            if(err.code !== 'MODULE_NOT_FOUND') {
                 throw err;
+                process.exit(1);
             }
-        });
-    } catch (err) {
-        throw err;
-        process.exit();
+            console.log(chalk.bold('No `after/migration.js` file found, skipping...'));
+            noFile = true;
+        }
     }
 }
 
