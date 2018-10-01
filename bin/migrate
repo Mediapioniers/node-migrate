@@ -417,24 +417,30 @@ function init() {
 function doSeed() {
     if (!options.seedFiles.length) {
         console.log(chalk.bgRed('No seed files were specified! Nothing to seed...'));
-        process.exit();
+        afterMigration(options.lastTitle, function() {
+            process.exit();
+        });
     }
     console.log(chalk.bold('Start seeding...'));
     require(path.join(path.resolve('migrations'), 'seeder', 'seed.js'))(options.seedFiles, function() {
         console.log(chalk.green('Seeding finished!'));
-        afterMigration(options.lastTitle);
-        process.exit();
+        afterMigration(options.lastTitle, function() {
+            process.exit();
+        });
     });
+
+
 }
 
 let noFile = false;
-function afterMigration(file) {
+function afterMigration(file, done) {
     if(!noFile) {
         try {
             require(path.join(path.resolve('migrations'), 'after', 'migration.js'))(file, function(err) {
                 if(err) {
                     throw err;
                 }
+                return done();
             });
         } catch (err) {
             if(err.code !== 'MODULE_NOT_FOUND') {
@@ -444,6 +450,8 @@ function afterMigration(file) {
             console.log(chalk.bold('No `after/migration.js` file found, skipping...'));
             noFile = true;
         }
+    } else {
+        return done();
     }
 }
 
