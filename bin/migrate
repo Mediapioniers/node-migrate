@@ -33,6 +33,7 @@ var options = {
     seedAfterMigrate: false,
     seedOnly: false,
     seedFiles: [],
+    lastTitle: '',
     template: [
         '\'use strict\';'
         , ''
@@ -263,7 +264,7 @@ function getMigrationSet(creating) {
             }
         });
         set.on('migrationDone', function(migration, direction, seedFiles) {
-            afterMigration(migration.title);
+            options.lastTitle = migration.title;
         });
     }
     return set;
@@ -421,6 +422,7 @@ function doSeed() {
     console.log(chalk.bold('Start seeding...'));
     require(path.join(path.resolve('migrations'), 'seeder', 'seed.js'))(options.seedFiles, function() {
         console.log(chalk.green('Seeding finished!'));
+        afterMigration(options.title);
         process.exit();
     });
 }
