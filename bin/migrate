@@ -422,7 +422,7 @@ function doSeed() {
     console.log(chalk.bold('Start seeding...'));
     require(path.join(path.resolve('migrations'), 'seeder', 'seed.js'))(options.seedFiles, function() {
         console.log(chalk.green('Seeding finished!'));
-        afterMigration(options.title);
+        afterMigration(options.lastTitle);
         process.exit();
     });
 }
