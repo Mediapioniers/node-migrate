@@ -417,14 +417,20 @@ function init() {
 function doSeed() {
     if (!options.seedFiles.length) {
         console.log(chalk.bgRed('No seed files were specified! Nothing to seed...'));
+        console.log('no seed file');
+        console.log(options.lastTitle);
         afterMigration(options.lastTitle, function() {
+            console.log('afterMigration process exit1');
             process.exit();
         });
     }
     console.log(chalk.bold('Start seeding...'));
     require(path.join(path.resolve('migrations'), 'seeder', 'seed.js'))(options.seedFiles, function() {
         console.log(chalk.green('Seeding finished!'));
+        console.log(options.lastTitle);
+        console.log('afterMigration');
         afterMigration(options.lastTitle, function() {
+            console.log('afterMigration process exit2');
             process.exit();
         });
     });
