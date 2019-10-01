@@ -77,6 +77,8 @@ var options = {
     ].join('\n')
 };
 
+let noFile = false;
+
 try {
     options.isProdEnvironment = (process.env.NODE_ENV || 'production') === 'production';
 } catch (err) {
@@ -435,7 +437,6 @@ function doSeed() {
 
 }
 
-let noFile = false;
 function afterMigration(file, done) {
     if(!noFile) {
         try {
