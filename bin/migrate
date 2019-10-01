@@ -354,8 +354,10 @@ function check(exit) {
             newPos += migration.processed ? 1 : 0;
         });
         set.pos = newPos;
-        set.save(function() {
-            checkExit();
+        afterMigration(_.last(set.migrations).title, function() {
+            set.save(function() {
+                checkExit();
+            });
         });
     } else {
         checkExit();
